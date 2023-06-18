@@ -1,14 +1,6 @@
 part of flutter_parse_sdk_flutter;
 
-/// A widget that displays a live grid of Parse objects.
-///
-/// The `ParseLiveGridWidget` is initialized with a `query` that retrieves the
-/// objects to display in the grid. The `gridDelegate` is used to specify the
-/// layout of the grid, and the `itemBuilder` function is used to specify how
-/// each object in the grid should be displayed.
-///
-/// The `ParseLiveGridWidget` also provides support for error handling and
-/// refreshing the live list of objects.
+/// A widget that displays a live grid of Parse objects with pagination support.
 class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
   const ParseLiveGridWidget({
     Key? key,
@@ -34,6 +26,8 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
     this.crossAxisSpacing = 5.0,
     this.mainAxisSpacing = 5.0,
     this.childAspectRatio = 0.80,
+    this.limit = 20, // Default limit per page
+    this.initialSkip = 0, // Initial skip value
   }) : super(key: key);
 
   final sdk.QueryBuilder<T> query;
@@ -65,38 +59,39 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
   final double mainAxisSpacing;
   final double childAspectRatio;
 
+  final int limit;
+  final int initialSkip;
+
   @override
   State<ParseLiveGridWidget<T>> createState() => _ParseLiveGridWidgetState<T>();
-
-  static Widget defaultChildBuilder<T extends sdk.ParseObject>(
-      BuildContext context, sdk.ParseLiveListElementSnapshot<T> snapshot) {
-    Widget child;
-    if (snapshot.failed) {
-      child = const Text('something went wrong!');
-    } else if (snapshot.hasData) {
-      child = ListTile(
-        title: Text(
-          snapshot.loadedData!.get<String>(sdk.keyVarObjectId)!,
-        ),
-      );
-    } else {
-      child = const ListTile(
-        leading: CircularProgressIndicator(),
-      );
-    }
-    return child;
-  }
 }
 
 class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
     extends State<ParseLiveGridWidget<T>> {
   sdk.ParseLiveList<T>? _liveGrid;
   bool noData = true;
+  int skip = 0;
 
   @override
   void initState() {
+    super.initState();
+    fetchGridData();
+  }
+
+  @override
+  void dispose() {
+    _liveGrid?.dispose();
+    _liveGrid = null;
+    super.dispose();
+  }
+
+  void fetchGridData() {
+    sdk.QueryBuilder<T> modifiedQuery = widget.query
+      ..limit(widget.limit)
+      ..skip(skip);
+
     sdk.ParseLiveList.create(
-      widget.query,
+      modifiedQuery,
       listenOnAllSubItems: widget.listenOnAllSubItems,
       listeningIncludes: widget.listeningIncludes,
       lazyLoading: widget.lazyLoading,
@@ -113,16 +108,18 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
       }
       setState(() {
         _liveGrid = value;
-        _liveGrid!.stream
-            .listen((sdk.ParseLiveListEvent<sdk.ParseObject> event) {
+        _liveGrid!.stream.listen((sdk.ParseLiveListEvent<sdk.ParseObject> event) {
           if (mounted) {
             setState(() {});
           }
         });
       });
     });
+  }
 
-    super.initState();
+  void loadMoreData() {
+    skip += widget.limit;
+    fetchGridData();
   }
 
   @override
@@ -150,7 +147,6 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
       end: 1.0,
     ).animate(
       CurvedAnimation(
-        // TODO: AnimationController is always null, so this breaks
         parent: widget.animationController!,
         curve: const Interval(
           0,
@@ -160,22 +156,24 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
       ),
     );
     return GridView.builder(
-        reverse: widget.reverse,
-        padding: widget.padding,
-        physics: widget.scrollPhysics,
-        controller: widget.scrollController,
-        scrollDirection: widget.scrollDirection,
-        shrinkWrap: widget.shrinkWrap,
-        itemCount: liveGrid.size,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: widget.crossAxisCount,
-            crossAxisSpacing: widget.crossAxisSpacing,
-            mainAxisSpacing: widget.mainAxisSpacing,
-            childAspectRatio: widget.childAspectRatio),
-        itemBuilder: (
-          BuildContext context,
-          int index,
-        ) {
+      reverse: widget.reverse,
+      padding: widget.padding,
+      physics: widget.scrollPhysics,
+      controller: widget.scrollController,
+      scrollDirection: widget.scrollDirection,
+      shrinkWrap: widget.shrinkWrap,
+      itemCount: liveGrid.totalSize, // Use totalSize for pagination
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: widget.crossAxisCount,
+        crossAxisSpacing: widget.crossAxisSpacing,
+        mainAxisSpacing: widget.mainAxisSpacing,
+        childAspectRatio: widget.childAspectRatio,
+      ),
+      itemBuilder: (
+        BuildContext context,
+        int index,
+      ) {
+        if (index < liveGrid.size) {
           return ParseLiveListElementWidget<T>(
             key: ValueKey<String>(liveGrid.getIdentifier(index)),
             stream: () => liveGrid.getAt(index),
@@ -183,16 +181,35 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
             preLoadedData: () => liveGrid.getPreLoadedAt(index)!,
             sizeFactor: boxAnimation,
             duration: widget.duration,
-            childBuilder:
-                widget.childBuilder ?? ParseLiveGridWidget.defaultChildBuilder,
+            childBuilder: widget.childBuilder ?? ParseLiveGridWidget.defaultChildBuilder,
           );
-        });
+        } else {
+          // Return a loading indicator or any widget to indicate loading more data.
+          // This will be displayed when the user scrolls to the end of the grid.
+          return CircularProgressIndicator();
+        }
+      },
+    );
   }
-
-  @override
-  void dispose() {
-    _liveGrid?.dispose();
-    _liveGrid = null;
-    super.dispose();
+  
+  static Widget defaultChildBuilder<T extends sdk.ParseObject>(
+    BuildContext context,
+    sdk.ParseLiveListElementSnapshot<T> snapshot,
+  ) {
+    Widget child;
+    if (snapshot.failed) {
+      child = const Text('Something went wrong!');
+    } else if (snapshot.hasData) {
+      child = ListTile(
+        title: Text(
+          snapshot.loadedData!.get<String>(sdk.keyVarObjectId)!,
+        ),
+      );
+    } else {
+      child = const ListTile(
+        leading: CircularProgressIndicator(),
+      );
+    }
+    return child;
   }
 }
