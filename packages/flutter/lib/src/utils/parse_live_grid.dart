@@ -64,6 +64,27 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
 
   @override
   State<ParseLiveGridWidget<T>> createState() => _ParseLiveGridWidgetState<T>();
+
+  static Widget defaultChildBuilder<T extends sdk.ParseObject>(
+      BuildContext context,
+      sdk.ParseLiveListElementSnapshot<T> snapshot,
+      ) {
+    Widget child;
+    if (snapshot.failed) {
+      child = const Text('Something went wrong!');
+    } else if (snapshot.hasData) {
+      child = ListTile(
+        title: Text(
+          snapshot.loadedData!.get<String>(sdk.keyVarObjectId)!,
+        ),
+      );
+    } else {
+      child = const ListTile(
+        leading: CircularProgressIndicator(),
+      );
+    }
+    return child;
+  }
 }
 
 class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
@@ -87,8 +108,8 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
 
   void fetchGridData() {
     sdk.QueryBuilder<T> modifiedQuery = widget.query
-      ..limit(widget.limit)
-      ..skip(skip);
+      ..setLimit(widget.limit)
+      ..setAmountToSkip(skip);
 
     sdk.ParseLiveList.create(
       modifiedQuery,
@@ -162,7 +183,7 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
       controller: widget.scrollController,
       scrollDirection: widget.scrollDirection,
       shrinkWrap: widget.shrinkWrap,
-      itemCount: liveGrid.totalSize, // Use totalSize for pagination
+      itemCount: liveGrid.size, // Use totalSize for pagination
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: widget.crossAxisCount,
         crossAxisSpacing: widget.crossAxisSpacing,
@@ -190,26 +211,5 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
         }
       },
     );
-  }
-  
-  static Widget defaultChildBuilder<T extends sdk.ParseObject>(
-    BuildContext context,
-    sdk.ParseLiveListElementSnapshot<T> snapshot,
-  ) {
-    Widget child;
-    if (snapshot.failed) {
-      child = const Text('Something went wrong!');
-    } else if (snapshot.hasData) {
-      child = ListTile(
-        title: Text(
-          snapshot.loadedData!.get<String>(sdk.keyVarObjectId)!,
-        ),
-      );
-    } else {
-      child = const ListTile(
-        leading: CircularProgressIndicator(),
-      );
-    }
-    return child;
   }
 }
