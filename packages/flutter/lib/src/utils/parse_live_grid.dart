@@ -200,13 +200,23 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
             },
           ),
         ),
-        if (isLastPage())
+        if (isAtEnd())
           ElevatedButton(
             onPressed: loadNextPage,
             child: const Text('Load More'),
           ),
       ],
     );
+  }
+
+  bool isAtEnd() {
+    if (!widget.scrollController!.hasClients) return false;
+
+    final maxScrollExtent = widget.scrollController!.position.maxScrollExtent;
+    final currentScrollPosition = widget.scrollController!.position.pixels;
+    const threshold = 0.0; // A small threshold to account for rounding errors
+
+    return currentScrollPosition >= (maxScrollExtent - threshold);
   }
 
   Future<void> loadNextPage() async {
