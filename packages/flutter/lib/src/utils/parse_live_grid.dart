@@ -34,6 +34,7 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
     this.mainAxisSpacing = 5.0,
     this.childAspectRatio = 0.80,
     this.shrinkWrap = true,
+    this.limit = 5,
   }) : super(key: key);
 
   final sdk.QueryBuilder<T> query;
@@ -48,6 +49,7 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
   final bool? primary;
   final bool reverse;
   final bool shrinkWrap;
+  final int limit;
 
   final ChildBuilder<T>? childBuilder;
   final ChildBuilder<T>? removedItemBuilder;
@@ -103,7 +105,7 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
   }
 
   Future<void> loadGridData({sdk.QueryBuilder<T>? query}) async {
-    sdk.QueryBuilder<T>? initialQuery = widget.query..setLimit(itemsPerPage)..setAmountToSkip(currentPage * itemsPerPage);
+    sdk.QueryBuilder<T>? initialQuery = widget.query..setLimit(widget.limit)..setAmountToSkip(currentPage * itemsPerPage);
 
     if(query != null) {
       initialQuery = query;
@@ -226,7 +228,7 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
       setState(() {
         currentPage++;
       });
-      final nextPageItems = await widget.query..setLimit(itemsPerPage)..setAmountToSkip(currentPage * itemsPerPage)..find();
+      final nextPageItems = await widget.query..setLimit(widget.limit)..setAmountToSkip(currentPage * itemsPerPage)..find();
       //_liveGrid!.addAll(nextPageItems);
       //loadGridData(query: nextPageItems);
       loadGridData();
