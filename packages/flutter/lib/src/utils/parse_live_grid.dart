@@ -1,6 +1,14 @@
 part of flutter_parse_sdk_flutter;
 
-/// A widget that displays a live grid of Parse objects with pagination support.
+/// A widget that displays a live grid of Parse objects.
+///
+/// The `ParseLiveGridWidget` is initialized with a `query` that retrieves the
+/// objects to display in the grid. The `gridDelegate` is used to specify the
+/// layout of the grid, and the `itemBuilder` function is used to specify how
+/// each object in the grid should be displayed.
+///
+/// The `ParseLiveGridWidget` also provides support for error handling and
+/// refreshing the live list of objects.
 class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
   const ParseLiveGridWidget({
     Key? key,
@@ -15,7 +23,6 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
     this.primary,
     this.reverse = false,
     this.childBuilder,
-    this.shrinkWrap = false,
     this.removedItemBuilder,
     this.listenOnAllSubItems,
     this.listeningIncludes,
@@ -26,8 +33,7 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
     this.crossAxisSpacing = 5.0,
     this.mainAxisSpacing = 5.0,
     this.childAspectRatio = 0.80,
-    this.limit = 20, // Default limit per page
-    this.initialSkip = 0, // Initial skip value
+    this.shrinkWrap = true,
   }) : super(key: key);
 
   final sdk.QueryBuilder<T> query;
@@ -59,19 +65,14 @@ class ParseLiveGridWidget<T extends sdk.ParseObject> extends StatefulWidget {
   final double mainAxisSpacing;
   final double childAspectRatio;
 
-  final int limit;
-  final int initialSkip;
-
   @override
   State<ParseLiveGridWidget<T>> createState() => _ParseLiveGridWidgetState<T>();
 
   static Widget defaultChildBuilder<T extends sdk.ParseObject>(
-      BuildContext context,
-      sdk.ParseLiveListElementSnapshot<T> snapshot,
-      ) {
+      BuildContext context, sdk.ParseLiveListElementSnapshot<T> snapshot) {
     Widget child;
     if (snapshot.failed) {
-      child = const Text('Something went wrong!');
+      child = const Text('something went wrong!');
     } else if (snapshot.hasData) {
       child = ListTile(
         title: Text(
@@ -91,42 +92,42 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
     extends State<ParseLiveGridWidget<T>> {
   sdk.ParseLiveList<T>? _liveGrid;
   bool noData = true;
-  int skip = 0;
+  final int itemsPerPage = 10; // Adjust the value according to your needs
+  int currentPage = 0;
+  int totalCount = 0;
 
   @override
   void initState() {
+    loadGridData();
     super.initState();
-    fetchGridData();
   }
 
-  @override
-  void dispose() {
-    _liveGrid?.dispose();
-    _liveGrid = null;
-    super.dispose();
-  }
+  Future<void> loadGridData({sdk.QueryBuilder<T>? query}) async {
+    sdk.QueryBuilder<T>? initialQuery = widget.query..setLimit(itemsPerPage)..setAmountToSkip(currentPage * itemsPerPage);
 
-  void fetchGridData() {
-    sdk.QueryBuilder<T> modifiedQuery = widget.query
-      ..setLimit(widget.limit)
-      ..setAmountToSkip(skip);
+    if(query != null) {
+      initialQuery = query;
+    }
+
+    final totalCountQuery = await initialQuery.count();
+    if (totalCountQuery.count > 0) {
+      setState(() {
+        noData = false;
+        totalCount = totalCountQuery.count;
+      });
+    } else {
+      setState(() {
+        noData = true;
+      });
+    }
 
     sdk.ParseLiveList.create(
-      modifiedQuery,
+      initialQuery,
       listenOnAllSubItems: widget.listenOnAllSubItems,
       listeningIncludes: widget.listeningIncludes,
       lazyLoading: widget.lazyLoading,
       preloadedColumns: widget.preloadedColumns,
     ).then((sdk.ParseLiveList<T> value) {
-      if (value.size > 0) {
-        setState(() {
-          noData = false;
-        });
-      } else {
-        setState(() {
-          noData = true;
-        });
-      }
       setState(() {
         _liveGrid = value;
         _liveGrid!.stream.listen((sdk.ParseLiveListEvent<sdk.ParseObject> event) {
@@ -136,11 +137,6 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
         });
       });
     });
-  }
-
-  void loadMoreData() {
-    skip += widget.limit;
-    fetchGridData();
   }
 
   @override
@@ -154,13 +150,6 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
     return buildAnimatedGrid(_liveGrid!);
   }
 
-  @override
-  void setState(VoidCallback fn) {
-    if (mounted) {
-      super.setState(fn);
-    }
-  }
-
   Widget buildAnimatedGrid(sdk.ParseLiveList<T> liveGrid) {
     Animation<double> boxAnimation;
     boxAnimation = Tween<double>(
@@ -168,6 +157,7 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
       end: 1.0,
     ).animate(
       CurvedAnimation(
+        // TODO: AnimationController is always null, so this breaks
         parent: widget.animationController!,
         curve: const Interval(
           0,
@@ -176,40 +166,70 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
         ),
       ),
     );
-    return GridView.builder(
-      reverse: widget.reverse,
-      padding: widget.padding,
-      physics: widget.scrollPhysics,
-      controller: widget.scrollController,
-      scrollDirection: widget.scrollDirection,
-      shrinkWrap: widget.shrinkWrap,
-      itemCount: liveGrid.size, // Use totalSize for pagination
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: widget.crossAxisCount,
-        crossAxisSpacing: widget.crossAxisSpacing,
-        mainAxisSpacing: widget.mainAxisSpacing,
-        childAspectRatio: widget.childAspectRatio,
-      ),
-      itemBuilder: (
-        BuildContext context,
-        int index,
-      ) {
-        if (index < liveGrid.size) {
-          return ParseLiveListElementWidget<T>(
-            key: ValueKey<String>(liveGrid.getIdentifier(index)),
-            stream: () => liveGrid.getAt(index),
-            loadedData: () => liveGrid.getLoadedAt(index)!,
-            preLoadedData: () => liveGrid.getPreLoadedAt(index)!,
-            sizeFactor: boxAnimation,
-            duration: widget.duration,
-            childBuilder: widget.childBuilder ?? ParseLiveGridWidget.defaultChildBuilder,
-          );
-        } else {
-          // Return a loading indicator or any widget to indicate loading more data.
-          // This will be displayed when the user scrolls to the end of the grid.
-          return CircularProgressIndicator();
-        }
-      },
+    return Column(
+      children: [
+        Expanded(
+          child: GridView.builder(
+            reverse: widget.reverse,
+            padding: widget.padding,
+            physics: widget.scrollPhysics,
+            controller: widget.scrollController,
+            scrollDirection: widget.scrollDirection,
+            shrinkWrap: widget.shrinkWrap,
+            itemCount: liveGrid.size,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: widget.crossAxisCount,
+              crossAxisSpacing: widget.crossAxisSpacing,
+              mainAxisSpacing: widget.mainAxisSpacing,
+              childAspectRatio: widget.childAspectRatio,
+            ),
+            itemBuilder: (
+                BuildContext context,
+                int index,
+                ) {
+              return ParseLiveListElementWidget<T>(
+                key: ValueKey<String>(liveGrid.getIdentifier(index)),
+                stream: () => liveGrid.getAt(index),
+                loadedData: () => liveGrid.getLoadedAt(index)!,
+                preLoadedData: () => liveGrid.getPreLoadedAt(index)!,
+                sizeFactor: boxAnimation,
+                duration: widget.duration,
+                childBuilder:
+                widget.childBuilder ?? ParseLiveGridWidget.defaultChildBuilder,
+              );
+            },
+          ),
+        ),
+        if (isLastPage())
+          ElevatedButton(
+            onPressed: loadNextPage,
+            child: const Text('Load More'),
+          ),
+      ],
     );
+  }
+
+  Future<void> loadNextPage() async {
+    if (_liveGrid != null && !isLastPage()) {
+      setState(() {
+        currentPage++;
+      });
+      final nextPageItems = await widget.query..setLimit(itemsPerPage)..setAmountToSkip(currentPage * itemsPerPage)..find();
+      //_liveGrid!.addAll(nextPageItems);
+      //loadGridData(query: nextPageItems);
+      loadGridData();
+
+    }
+  }
+
+  bool isLastPage() {
+    return currentPage * itemsPerPage >= totalCount;
+  }
+
+  @override
+  void dispose() {
+    _liveGrid?.dispose();
+    _liveGrid = null;
+    super.dispose();
   }
 }
