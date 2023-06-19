@@ -200,11 +200,13 @@ class _ParseLiveGridWidgetState<T extends sdk.ParseObject>
             },
           ),
         ),
-        if (isAtEnd())
-          ElevatedButton(
+        Visibility(
+          visible: isAtEnd() && !isLastPage(),
+          child: ElevatedButton(
             onPressed: loadNextPage,
-            child: const Text('Load More'),
+            child: const Text('Load More', style: TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.bold),),
           ),
+        ),
       ],
     );
   }
